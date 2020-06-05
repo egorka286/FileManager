@@ -175,8 +175,8 @@ LRESULT CALLBACK MainProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam
 
 LRESULT CALLBACK PanelProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam)
 {
-	HWND hList = FindWindowEx(hWnd, NULL, TEXT("SysListView32"), NULL);
-	HWND hPath = FindWindowEx(hWnd, NULL, TEXT("Edit"), NULL);
+	HWND hList = FindWindowEx(hWnd, NULL, WC_LISTVIEW, NULL);
+	HWND hPath = FindWindowEx(hWnd, NULL, WC_EDIT, NULL);
 
 	switch (uMessage)
 	{
@@ -230,21 +230,24 @@ LRESULT CALLBACK PanelProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lPara
 		if (((LPNMITEMACTIVATE)lParam)->hdr.hwndFrom == hList)
 			if (((LPNMITEMACTIVATE)lParam)->hdr.code == NM_DBLCLK)
 			{
+				TCHAR szDrive[3];
 				TCHAR szPath[MAX_PATH];
 				TCHAR szName[MAX_PATH];
 				TCHAR szExt[MAX_PATH];
+				TCHAR szFullPath[MAX_PATH];
 				TCHAR szFullName[MAX_PATH];
 				HANDLE hFindFile;
 				WIN32_FIND_DATA  fileinfo;
 
-				ListView_GetItemText(hList, ((LPNMITEMACTIVATE)lParam)->iItem, 0, szName, MAX_PATH);
-				ListView_GetItemText(hList, ((LPNMITEMACTIVATE)lParam)->iItem, 1, szExt, MAX_PATH);
-				_tmakepath(szFullName, NULL, NULL, szName, szExt);
-
-				Edit_GetText(hPath, szPath, MAX_PATH);
+				Edit_GetText(hPath, szFullPath, MAX_PATH);
+				_tsplitpath(szFullPath, szDrive, szPath, NULL, NULL);
 				SetCurrentDirectory(szPath);
 
-				if (!lstrcmp(szFullName, TEXT("..")))
+				ListView_GetItemText(hList, ((LPNMITEMACTIVATE)lParam)->iItem, 0, szName, MAX_PATH);
+				ListView_GetItemText(hList, ((LPNMITEMACTIVATE)lParam)->iItem, 1, szExt, MAX_PATH);
+				_tmakepath(szFullName, szDrive, szPath, szName, szExt);
+
+				if (!lstrcmp(szName, TEXT("..")))
 				{
 					SetCurrentDirectory(szFullName);
 					_tfullpath(szFullName, TEXT("*.*"), MAX_PATH);
