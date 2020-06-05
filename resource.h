@@ -11,8 +11,7 @@
 #define ID_COPY                         40012
 #define ID_REMOVE                       40013
 #define ID_ABOUT                        40014
-#define WM_CD							WM_USER
-#define WM_DIR							WM_USER + 1
+#define WM_UPDATE						WM_USER
 
 // Next default values for new objects
 // 

@@ -1,10 +1,31 @@
 //#undef UNICODE
 //#undef _UNICODE
+
+
+/*************************************************************************************
+CreateDirectory
+DeleteFile
+FindClose
+FindFirstFile
+FindNextFile
+GetDiskFreeSpace
+GetDriveType
+GetFileAttributes
+GetFileSize
+GetFileTime
+GetLogicalDrives
+GetLogicalDriveStrings
+RemoveDirectory
+*************************************************************************************/
+
 #include <Windows.h>
+#include <windowsx.h>
 #include <commctrl.h>
 #include <stdio.h>
 #include <io.h>
 #include <tchar.h>
+#include <stdlib.h>
+#include <strsafe.h>
 #include "resource.h"
 
 LRESULT CALLBACK MainProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam);
@@ -125,7 +146,7 @@ LRESULT CALLBACK MainProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam
 
 		if ((HWND)lParam == hButtonMkdir && HIWORD(wParam) == BN_CLICKED)
 		{
-			SendMessage(hPanelWndLeft, WM_CD, 0, (LPARAM)TEXT("C:\\Windows"));
+
 			break;
 		}
 
@@ -161,31 +182,35 @@ LRESULT CALLBACK PanelProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lPara
 	{
 	case WM_CREATE:
 	{
-		hList = CreateWindowEx(0, TEXT("SysListView32"), NULL, WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_NOSORTHEADER | LVS_SINGLESEL | LVS_NOLABELWRAP | LVS_ALIGNLEFT | WS_TABSTOP | WS_BORDER, 0, 0, 0, 0, hWnd, NULL, NULL, NULL);
-		hPath = CreateWindowEx(0, TEXT("Edit"), NULL, WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hWnd, NULL, NULL, NULL);
+		TCHAR szFullPath[MAX_PATH];
 
-		LVCOLUMN lvCol;
-		memset(&lvCol, 0, sizeof(lvCol));
+		hList = CreateWindowEx(0, WC_LISTVIEW, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL, 0, 0, 0, 0, hWnd, NULL, NULL, NULL);
+		ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
+		hPath = CreateWindowEx(0, WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY, 0, 0, 0, 0, hWnd, NULL, NULL, NULL);
 
-		lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
-		lvCol.fmt = LVCFMT_LEFT;
+		LVCOLUMN lvColumn;
 
-		lvCol.cx = 100;
-		lvCol.pszText = TEXT("Имя");
-		SendMessage(hList, LVM_INSERTCOLUMN, 0, (LPARAM)&lvCol);
+		lvColumn.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
+		lvColumn.fmt = LVCFMT_LEFT;
 
-		lvCol.cx = 70;
-		lvCol.pszText = TEXT("Тип");
-		SendMessage(hList, LVM_INSERTCOLUMN, 1, (LPARAM)&lvCol);
+		lvColumn.cx = 100;
+		lvColumn.pszText = TEXT("Имя");
+		ListView_InsertColumn(hList, 0, &lvColumn);
 
-		lvCol.cx = 80;
-		lvCol.fmt = LVCFMT_RIGHT;
-		lvCol.pszText = TEXT("Размер");
-		SendMessage(hList, LVM_INSERTCOLUMN, 2, (LPARAM)&lvCol);
+		lvColumn.cx = 70;
+		lvColumn.pszText = TEXT("Тип");
+		ListView_InsertColumn(hList, 1, &lvColumn);
 
-		TCHAR szCurPath[255];
-		GetCurrentDirectory(sizeof(szCurPath), szCurPath);
-		SendMessage(hWnd, WM_CD, 0, (LPARAM)szCurPath);
+		lvColumn.cx = 80;
+		lvColumn.fmt = LVCFMT_RIGHT;
+		lvColumn.pszText = TEXT("Размер");
+		ListView_InsertColumn(hList, 2, &lvColumn);
+
+		// получение и сохранение текущего пути
+		_tfullpath(szFullPath, TEXT("*.*"), MAX_PATH);
+		Edit_SetText(hPath, szFullPath);
+
+		SendMessage(hWnd, WM_UPDATE, 0, 0);
 
 		break;
 	}
@@ -195,88 +220,142 @@ LRESULT CALLBACK PanelProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lPara
 		int nHeight = HIWORD(lParam);
 
 		MoveWindow(hList, 0, 20, nWidth, nHeight - 20, TRUE);
-		SendMessage(hList, LVM_SETCOLUMNWIDTH, 0, nWidth - 70 - 80 - 20);
+		ListView_SetColumnWidth(hList, 0, nWidth - ListView_GetColumnWidth(hList, 1) - ListView_GetColumnWidth(hList, 2) - 20);
 		MoveWindow(hPath, 0, 0, nWidth, 20, TRUE);
 
 		break;
 	}
-	case WM_CD:
+	case WM_NOTIFY:
 	{
-		SetWindowText(hPath, (const TCHAR*)lParam);
-		SetCurrentDirectory((const TCHAR*)lParam);
-		SendMessage(hWnd, WM_DIR, 0, 0);
+		if (((LPNMITEMACTIVATE)lParam)->hdr.hwndFrom == hList)
+			if (((LPNMITEMACTIVATE)lParam)->hdr.code == NM_DBLCLK)
+			{
+				TCHAR szPath[MAX_PATH];
+				TCHAR szName[MAX_PATH];
+				TCHAR szExt[MAX_PATH];
+				TCHAR szFullName[MAX_PATH];
+				HANDLE hFindFile;
+				WIN32_FIND_DATA  fileinfo;
 
+				ListView_GetItemText(hList, ((LPNMITEMACTIVATE)lParam)->iItem, 0, szName, MAX_PATH);
+				ListView_GetItemText(hList, ((LPNMITEMACTIVATE)lParam)->iItem, 1, szExt, MAX_PATH);
+				_tmakepath(szFullName, NULL, NULL, szName, szExt);
+
+				Edit_GetText(hPath, szPath, MAX_PATH);
+				SetCurrentDirectory(szPath);
+
+				if (!lstrcmp(szFullName, TEXT("..")))
+				{
+					SetCurrentDirectory(szFullName);
+					_tfullpath(szFullName, TEXT("*.*"), MAX_PATH);
+					Edit_SetText(hPath, szFullName);
+					SendMessage(hWnd, WM_UPDATE, 0, 0);
+				}
+				else
+					if ((hFindFile = FindFirstFile(szFullName, &fileinfo)) != INVALID_HANDLE_VALUE)
+					{
+						// FILE_ATTRIBUTE_REPARSE_POINT вроде для ссылок
+						if (fileinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+						{
+							SetCurrentDirectory(szFullName);
+							_tfullpath(szFullName, TEXT("*.*"), MAX_PATH);
+							Edit_SetText(hPath, szFullName);
+							SendMessage(hWnd, WM_UPDATE, 0, 0);
+						}
+						//else
+						//	MessageBox(hWnd, TEXT("Не каталог"), 0, MB_ICONHAND | MB_OK);
+						FindClose(hFindFile);
+					}
+					else
+						MessageBox(hWnd, TEXT("Файл не найден"), 0, MB_ICONHAND | MB_OK);
+			}
 		break;
 	}
-	case WM_DIR:
+	case WM_UPDATE:
 	{
 		int i = 0;
-		struct _tfinddata_t fileinfo;
+		HANDLE hFindFile;
+		ULONGLONG nFileSize;
+		TCHAR szPath[MAX_PATH];
+		TCHAR szFileSize[MAX_PATH];
+		TCHAR szFormatSize[MAX_PATH];
+		WIN32_FIND_DATA  fileinfo;
+		NUMBERFMT format;
+		TCHAR szFileName[MAX_PATH];
+		TCHAR szFileExt[MAX_PATH];
 		LVITEM lvItem;
-		memset(&lvItem, 0, sizeof(lvItem));
-		intptr_t hFile;
-		SendMessage(hList, LVM_DELETEALLITEMS, 0, 0);
 
-		if ((hFile = _tfindfirst(TEXT("*.*"), &fileinfo)) != -1)
+		memset(&lvItem, 0, sizeof(lvItem));
+		lvItem.mask = LVIF_TEXT;
+		ListView_DeleteAllItems(hList);
+
+		Edit_GetText(hPath, szPath, MAX_PATH);
+		SetCurrentDirectory(szPath);
+
+		// добавление каталогов
+		if ((hFindFile = FindFirstFile(TEXT("*.*"), &fileinfo)) != INVALID_HANDLE_VALUE)
 		{
 			do
 			{
-				if (fileinfo.attrib & _A_SUBDIR && lstrcmp(fileinfo.name, TEXT(".")))
+				if (fileinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY && lstrcmp(fileinfo.cFileName, TEXT(".")))
 				{
-					lvItem.mask = LVIF_TEXT;
-
 					lvItem.iItem = i++;
 					lvItem.iSubItem = 0;
-					lvItem.pszText = fileinfo.name;
-					SendMessage(hList, LVM_INSERTITEM, 0, (LPARAM)&lvItem);
+					lvItem.pszText = fileinfo.cFileName;
+					ListView_InsertItem(hList, &lvItem);
 
 					lvItem.iSubItem = 2;
 					lvItem.pszText = TEXT("<Папка>");
-					SendMessage(hList, LVM_SETITEM, 0, (LPARAM)&lvItem);
+					ListView_SetItem(hList, &lvItem);
 				}
-			} while (_tfindnext(hFile, &fileinfo) == 0);
-			_findclose(hFile);
+			} while (FindNextFile(hFindFile, &fileinfo));
+			FindClose(hFindFile);
 		}
-		
-		if ((hFile = _tfindfirst(TEXT("*.*"), &fileinfo)) != -1)
+		// добавление файлов
+		if ((hFindFile = FindFirstFile(TEXT("*.*"), &fileinfo)) != INVALID_HANDLE_VALUE)
 		{
 			do
 			{
-				if (!(fileinfo.attrib & _A_SUBDIR))
+				if (!(fileinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 				{
-					lvItem.mask = LVIF_TEXT;
+					lstrcpy(szFileExt, TEXT("."));
+					_tsplitpath(fileinfo.cFileName, NULL, NULL, szFileName, szFileExt);
+					if (lstrlen(szFileName) == 0)
+					{
+						lstrcpy(szFileName, fileinfo.cFileName);
+						lstrcpy(szFileExt, TEXT("."));
+					}
 					lvItem.iItem = i++;
 					lvItem.iSubItem = 0;
-					lvItem.pszText = fileinfo.name;
-					SendMessage(hList, LVM_INSERTITEM, 0, (LPARAM)&lvItem);
+					lvItem.pszText = szFileName;
+					ListView_InsertItem(hList, &lvItem);
 
-					long nSize = fileinfo.size;
-					TCHAR szSize[20] = { 0 };
-					TCHAR szFormatSize[20] = { 0 };
-					_stprintf_s(szSize, sizeof(szSize) / sizeof(TCHAR), TEXT("%ld"), nSize);
-					NUMBERFMT format;
+					lvItem.iSubItem = 1;
+					lvItem.pszText = &szFileExt[1];
+					ListView_SetItem(hList, &lvItem);
+
+					nFileSize = ((ULONGLONG)fileinfo.nFileSizeHigh * ((ULONGLONG)MAXDWORD + (ULONGLONG)1)) + (ULONGLONG)fileinfo.nFileSizeLow;
+					_ui64tot_s(nFileSize, szFileSize, MAX_PATH, 10);
 					format.NumDigits = 0;
 					format.LeadingZero = 1;
 					format.Grouping = 3;
 					format.lpDecimalSep = TEXT(".");
 					format.lpThousandSep = TEXT(" ");
 					format.NegativeOrder = 0;
-					GetNumberFormat((LCID)LOCALE_NAME_USER_DEFAULT, 0, szSize, &format, szFormatSize, sizeof(szFormatSize) / sizeof(TCHAR));
-					
+					GetNumberFormat((LCID)LOCALE_NAME_USER_DEFAULT, 0, szFileSize, &format, szFormatSize, MAX_PATH);
+
 					lvItem.iSubItem = 2;
 					lvItem.pszText = szFormatSize;
-					SendMessage(hList, LVM_SETITEM, 0, (LPARAM)&lvItem);
+					ListView_SetItem(hList, &lvItem);
 				}
-			} while (_tfindnext(hFile, &fileinfo) == 0);
-			_findclose(hFile);
+			} while (FindNextFile(hFindFile, &fileinfo));
+			FindClose(hFindFile);
 		}
-
 		break;
 	}
 	case WM_DESTROY:
 	{
 		PostQuitMessage(0);
-
 		break;
 	}
 	default:
